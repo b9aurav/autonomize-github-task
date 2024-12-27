@@ -200,3 +200,56 @@ export const findAndSaveFriends = async (req: Request, res: Response) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+export const fetchRepositories = async (req: Request, res: Response) => {
+    const { username } = req.params;
+    try {
+        const user = await prisma.user.findUnique({ where: { username } });
+        if (!user) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        const response = await axios.get(`https://api.github.com/users/${username}/repos`);
+        const repositories = response.data;
+
+        const repositoryData = repositories.map((repo: any) => ({
+            name: repo.name,
+            description: repo.description,
+            url: repo.html_url,
+            stargazers_count: repo.stargazers_count,
+            forkCount: repo.forks_count,
+            homepageUrl: repo.homepage,
+            createdAt: repo.created_at,
+            userId: user.id
+        }));
+
+        await prisma.repository.createMany({
+            data: repositoryData,
+            skipDuplicates: true
+        });
+
+        res.status(200).json({ message: 'Repositories saved successfully', repositories: repositoryData });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+export const getRepositories = async (req: Request, res: Response) => {
+    const { username } = req.params;
+    try {
+        const user = await prisma.user.findUnique({ where: { username } });
+        if (!user) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        const repositories = await prisma.repository.findMany({
+            where: { userId: user.id }
+        });
+
+        res.status(200).json(repositories);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+}

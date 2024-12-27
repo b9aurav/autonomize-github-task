@@ -27,4 +27,16 @@ model User {
   following   Int
   createdAt   DateTime
   softDeleted Boolean  @default(false)
+  friends     Friend[] @relation(name: "UserFriends")
+  friendsWith Friend[] @relation(name: "FriendUsers")
+}
+
+model Friend {
+  id       Int  @id @default(autoincrement())
+  userId   Int
+  friendId Int
+  user     User @relation(name: "UserFriends", fields: [userId], references: [id])
+  friend   User @relation(name: "FriendUsers", fields: [friendId], references: [id])
+
+  @@unique([userId, friendId])
 }

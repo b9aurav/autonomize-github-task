@@ -29,6 +29,22 @@ model User {
   softDeleted Boolean  @default(false)
   friends     Friend[] @relation(name: "UserFriends")
   friendsWith Friend[] @relation(name: "FriendUsers")
+  Repository Repository[] @relation(name: "UserRepositories")
+}
+
+model Repository {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  url         String
+  forkCount   Int
+  homepageUrl String?
+  stargazers_count Int
+  createdAt   DateTime
+  userId      Int
+  user        User     @relation(name: "UserRepositories", fields: [userId], references: [id])
+
+  @@unique([userId, name])
 }
 
 model Friend {

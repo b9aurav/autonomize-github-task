@@ -129,3 +129,74 @@ export const getSortedUsers = async (req: Request, res: Response) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+export const findAndSaveFriends = async (req: Request, res: Response) => {
+    const { username } = req.params;
+    try {
+        const user = await prisma.user.findUnique({ where: { username } });
+        if (!user) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        const existingFriends = await prisma.friend.findMany({
+            where: { userId: user.id },
+            include: { friend: true }
+        });
+
+        if (existingFriends.length > 0) {
+            res.status(200).json({ friends: existingFriends });
+            return;
+        }
+
+        const [followersResponse, followingResponse] = await Promise.all([
+            axios.get(`https://api.github.com/users/${username}/followers`),
+            axios.get(`https://api.github.com/users/${username}/following`)
+        ]);
+
+        const followers = followersResponse.data.map((user: any) => user.login);
+        const following = followingResponse.data.map((user: any) => user.login);
+
+        const mutualFriends = followers.filter((user: string) => following.includes(user));
+
+        const friends = [];
+        for (const friendUsername of mutualFriends) {
+            let friend = await prisma.user.findUnique({ where: { username: friendUsername } });
+            if (!friend) {
+                const friendResponse = await axios.get(`https://api.github.com/users/${friendUsername}`);
+                const friendData = friendResponse.data;
+
+                friend = await prisma.user.create({
+                    data: {
+                        username: friendData.login,
+                        name: friendData.name,
+                        avatarUrl: friendData.avatar_url,
+                        location: friendData.location,
+                        bio: friendData.bio,
+                        blog: friendData.blog,
+                        publicRepos: friendData.public_repos,
+                        publicGists: friendData.public_gists,
+                        followers: friendData.followers,
+                        following: friendData.following,
+                        createdAt: new Date(friendData.created_at),
+                    },
+                });
+            }
+            friends.push(friend);
+        }
+
+        const friendRelations = friends.map(friend => ({
+            userId: user.id,
+            friendId: friend.id
+        }));
+
+        await prisma.friend.createMany({
+            data: friendRelations,
+            skipDuplicates: true
+        });
+
+        res.status(200).json({ message: 'Mutual friends saved successfully', friends });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+};

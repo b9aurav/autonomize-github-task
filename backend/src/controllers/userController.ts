@@ -248,6 +248,11 @@ export const getRepositories = async (req: Request, res: Response) => {
             where: { userId: user.id }
         });
 
+        if (repositories.length === 0) {
+            fetchRepositories(req, res);
+            return;
+        }
+
         res.status(200).json(repositories);
     } catch (error: any) {
         res.status(500).json({ error: error.message });

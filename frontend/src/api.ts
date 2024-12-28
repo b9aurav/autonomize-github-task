@@ -8,7 +8,7 @@ export const fetchUser = async (username: string) => {
 };
 
 export const fetchRepositories = async (username: string) => {
-    const response = await axios.get(`${API_BASE_URL}/users/${username}/repositories`);
+    const response = await axios.get(`${API_BASE_URL}/users/${username}/repos`);
     return response.data;
 };
 

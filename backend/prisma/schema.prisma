@@ -30,6 +30,8 @@ model User {
   friends     Friend[] @relation(name: "UserFriends")
   friendsWith Friend[] @relation(name: "FriendUsers")
   Repository Repository[] @relation(name: "UserRepositories")
+  UserRelationship UserRelationship[] @relation(name: "UserRelationships")
+  RelatedUserRelationships UserRelationship[] @relation(name: "RelatedUserRelationships")
 }
 
 model Repository {
@@ -55,4 +57,15 @@ model Friend {
   friend   User @relation(name: "FriendUsers", fields: [friendId], references: [id])
 
   @@unique([userId, friendId])
+}
+
+model UserRelationship {
+  id       Int  @id @default(autoincrement())
+  userId   Int
+  relatedUserId Int
+  type     String
+  user     User @relation(name: "UserRelationships", fields: [userId], references: [id])
+  relatedUser User @relation(name: "RelatedUserRelationships", fields: [relatedUserId], references: [id])
+
+  @@unique([userId, relatedUserId, type])
 }

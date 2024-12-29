@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './App.css';
 import SearchForm from './components/SearchForm';
-import { fetchRepositories, fetchUser, fetchFriends } from './api';
+import { fetchRepositories, fetchUser, fetchFriends, fetchConnections } from './api';
 import { Repository, User } from './interfaces';
 import UserInfo from './components/UserInfo';
 import RepositoryList from './components/RepositoryList';
@@ -11,8 +11,8 @@ import UserList from './components/UserList';
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [repositories, setRepositories] = useState<Repository[]>([]);
-  // const [followers, setFollowers] = useState<User[]>([]);
-  // const [following, setFollowing] = useState<User[]>([]);
+  const [followers, setFollowers] = useState<User[]>([]);
+  const [following, setFollowing] = useState<User[]>([]);
   const [friends, setFriends] = useState<User[]>([]);
   const [view, setView] = useState<'repositories' | 'followers' | 'following' | 'friends' | 'repositoryDetails'>('repositories');
   const [selectedRepository, setSelectedRepository] = useState<Repository | null>(null);
@@ -46,6 +46,22 @@ function App() {
     }
   };
 
+  const handleViewFollowers = async () => {
+    if (user) {
+      const followersData = await fetchConnections(user.username, 'follower');
+      setFollowers(followersData);
+      setView('followers');
+    }
+  }
+
+  const handleViewFollowing = async () => {
+    if (user) {
+      const followingData = await fetchConnections(user.username, 'following');
+      setFollowing(followingData);
+      setView('following');
+    }
+  }
+
   const handleSelectUser = async (username: string) => {
     await handleSearch(username);
   };
@@ -54,24 +70,36 @@ function App() {
     <div>
       <SearchForm onSearch={handleSearch} />
       {user && <UserInfo user={user} />}
-      {view === 'repositories' && (
+      {user && view === 'repositories' && (
         <>
-          <button  style={styles.button}>View Followers</button>
-          <button  style={styles.button}>View Following</button>
+          <button onClick={handleViewFollowers} style={styles.button}>View Followers</button>
+          <button onClick={handleViewFollowing} style={styles.button}>View Following</button>
           <button onClick={handleViewFriends} style={styles.button}>View Friends</button>
           <RepositoryList repositories={repositories} onSelectRepository={handleSelectRepository} ownerAvatarUrl={user?.avatarUrl} />
         </>
       )}
-      {view === 'repositoryDetails' && selectedRepository && (
+      {user && view === 'repositoryDetails' && selectedRepository && (
         <>
           <button onClick={handleBackToRepositories} style={styles.button}>Back to Repositories</button>
           <RepositoryDetails repository={selectedRepository} avatarUrl={user?.avatarUrl} />
         </>
       )}
-      {view === 'friends' && (
+      {user && view === 'friends' && (
         <>
           <button onClick={handleBackToRepositories} style={styles.button}>Back to Repositories</button>
           <UserList users={friends} title="Friends" onSelectUser={handleSelectUser} />
+        </>
+      )}
+      {user && view === 'followers' && (
+        <>
+          <button onClick={handleBackToRepositories} style={styles.button}>Back to Repositories</button>
+          <UserList users={followers} title="Followers" onSelectUser={handleSelectUser} />
+        </>
+      )}
+      {user && view === 'following' && (
+        <>
+          <button onClick={handleBackToRepositories} style={styles.button}>Back to Repositories</button>
+          <UserList users={following} title="Following" onSelectUser={handleSelectUser} />
         </>
       )}
     </div>

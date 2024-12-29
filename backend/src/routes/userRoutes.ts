@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createUser, getUser, updateUser, deleteUser, searchUsers, getSortedUsers, findAndSaveFriends, fetchRepositories, getRepositories } from '../controllers/userController';
+import { createUser, getUser, updateUser, deleteUser, searchUsers, getSortedUsers, findAndSaveFriends, fetchRepositories, getRepositories, fetchAndSaveUserConnections } from '../controllers/userController';
 
 const router = Router();
 
@@ -12,5 +12,6 @@ router.get('/users', getSortedUsers);
 router.post('/users/:username/friends', findAndSaveFriends);
 router.post('/users/:username/fetchRepos', fetchRepositories)
 router.get('/users/:username/repos', getRepositories);
+router.post('/users/:username/connections', fetchAndSaveUserConnections);
 
 export default router;

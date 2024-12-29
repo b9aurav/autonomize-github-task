@@ -1,22 +1,23 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export const createUser = async (req: Request, res: Response): Promise<any> => {
-    const { username } = req.body;
+const fetchAndSaveGithubUser = async (username: string): Promise<any> => {
     try {
         const existingUser = await prisma.user.findUnique({ where: { username } });
         if (existingUser) {
-            res.status(200).json(existingUser);
-            return;
+            return existingUser;
         }
 
         const response = await axios.get(`https://api.github.com/users/${username}`);
+        if (response.status !== 200) {
+            throw new Error(`Failed to fetch GitHub user: ${response.statusText}`);
+        }
         const userData = response.data;
 
-        const newUser = await prisma.user.create({
+        return await prisma.user.create({
             data: {
                 username: userData.login,
                 name: userData.name,
@@ -28,11 +29,19 @@ export const createUser = async (req: Request, res: Response): Promise<any> => {
                 publicGists: userData.public_gists,
                 followers: userData.followers,
                 following: userData.following,
-                createdAt: userData.created_at,
+                createdAt: new Date(userData.created_at),
             },
         });
+    } catch (error: any) {
+        throw new Error(`Failed to fetch and save GitHub user: ${error.message}`);
+    }
+};
 
-        return res.status(201).json(newUser);
+export const createUser = async (req: Request, res: Response): Promise<any> => {
+    const { username } = req.body;
+    try {
+        const user = await fetchAndSaveGithubUser(username);
+        return res.status(201).json(user);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -45,7 +54,8 @@ export const getUser = async (req: Request, res: Response) => {
         if (user) {
             res.status(200).json(user);
         } else {
-            res.status(404).json({ message: 'User not found' });
+            req.body.username = username;
+            createUser(req, res);
         }
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -130,10 +140,68 @@ export const getSortedUsers = async (req: Request, res: Response) => {
     }
 };
 
+const saveUserRelationships = async (
+    userId: number,
+    relatedUsers: string[],
+    relationType: 'follower' | 'following'
+): Promise<any[]> => {
+    try {
+        const relationships = await Promise.all(
+            relatedUsers.map(async (username) => {
+                const relatedUser = await fetchAndSaveGithubUser(username);
+                await prisma.userRelationship.create({
+                    data: {
+                        userId,
+                        relatedUserId: relatedUser.id,
+                        type: relationType,
+                    },
+                });
+                return relatedUser;
+            })
+        );
+        return relationships;
+    } catch (error: any) {
+        throw new Error(`Failed to save user relationships: ${error.message}`);
+    }
+};
+
+export const fetchAndSaveUserConnections = async (req: Request, res: Response) => {
+    const { username } = req.params;
+    const { type } = req.query as { type: 'follower' | 'following' };
+    
+    try {
+        const user = await fetchAndSaveGithubUser(username);
+        if (!user) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        const existingRelationships = await prisma.userRelationship.findMany({
+            where: { userId: user.id, type },
+            include: { relatedUser: true }
+        });
+
+        if (existingRelationships.length > 0) {
+            res.status(200).json({ 
+                [type as string]: existingRelationships.map(rel => rel.relatedUser) 
+            });
+            return;
+        }
+
+        const response = await axios.get(`https://api.github.com/users/${username}/${type}`);
+        const connections = response.data.map((user: any) => user.login);
+        
+        const savedConnections = await saveUserRelationships(user.id, connections, type);
+        res.status(200).json({ [type as string]: savedConnections });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 export const findAndSaveFriends = async (req: Request, res: Response) => {
     const { username } = req.params;
     try {
-        const user = await prisma.user.findUnique({ where: { username } });
+        const user = await fetchAndSaveGithubUser(username);
         if (!user) {
             res.status(404).json({ message: 'User not found' });
             return;
@@ -145,7 +213,7 @@ export const findAndSaveFriends = async (req: Request, res: Response) => {
         });
 
         if (existingFriends.length > 0) {
-            res.status(200).json({ friends: existingFriends });
+            res.status(200).json({ friends: existingFriends.map(f => f.friend) });
             return;
         }
 
@@ -156,42 +224,17 @@ export const findAndSaveFriends = async (req: Request, res: Response) => {
 
         const followers = followersResponse.data.map((user: any) => user.login);
         const following = followingResponse.data.map((user: any) => user.login);
-
         const mutualFriends = followers.filter((user: string) => following.includes(user));
 
-        const friends = [];
-        for (const friendUsername of mutualFriends) {
-            let friend = await prisma.user.findUnique({ where: { username: friendUsername } });
-            if (!friend) {
-                const friendResponse = await axios.get(`https://api.github.com/users/${friendUsername}`);
-                const friendData = friendResponse.data;
-
-                friend = await prisma.user.create({
-                    data: {
-                        username: friendData.login,
-                        name: friendData.name,
-                        avatarUrl: friendData.avatar_url,
-                        location: friendData.location,
-                        bio: friendData.bio,
-                        blog: friendData.blog,
-                        publicRepos: friendData.public_repos,
-                        publicGists: friendData.public_gists,
-                        followers: friendData.followers,
-                        following: friendData.following,
-                        createdAt: new Date(friendData.created_at),
-                    },
-                });
-            }
-            friends.push(friend);
-        }
-
-        const friendRelations = friends.map(friend => ({
-            userId: user.id,
-            friendId: friend.id
-        }));
+        const friends = await Promise.all(
+            mutualFriends.map((friendUsername: string) => fetchAndSaveGithubUser(friendUsername))
+        );
 
         await prisma.friend.createMany({
-            data: friendRelations,
+            data: friends.map(friend => ({
+                userId: user.id,
+                friendId: friend.id
+            })),
             skipDuplicates: true
         });
 
